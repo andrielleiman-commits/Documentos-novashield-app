@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Autodiagnóstico gratuito y orientativo de ciberseguridad para pequeñas empresas. Siete preguntas, sin registro ni datos personales.">
+  <title>Autodiagnóstico gratuito — NovaShield</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="../assets/css/diagnostico.css">
+</head>
+<body>
+  <!-- Cabecera pública independiente: no consulta la sesión ni inicializa Firebase. -->
+  <div class="topbar" id="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="../index.html" aria-label="NovaShield, ir al inicio">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <path d="M16 2 4 7v8c0 7.2 5 12.9 12 15 7-2.1 12-7.8 12-15V7L16 2Z" fill="#1f5eff"/>
+          <path d="M11 20V12l10 8v-8" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        NovaShield
+      </a>
+      <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Abrir menú"
+        aria-expanded="false" aria-controls="nav">&#9776;</button>
+      <nav class="nav" id="nav" aria-label="Navegación principal">
+        <a href="../index.html">Inicio</a>
+        <a href="catalogo.html">Servicios</a>
+        <a href="diagnostico.html" class="active" aria-current="page">Autodiagnóstico</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="btn btn-ghost" href="login.html">Iniciar sesión</a>
+        <a class="btn btn-primary" href="registro.html">Crear cuenta</a>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section class="page-head">
+      <div class="container">
+        <span class="badge badge-info">Gratuito · Sin registro</span>
+        <h1>¿Cómo cuidas la seguridad de tu empresa?</h1>
+        <p>Responde siete preguntas sobre tus prácticas actuales y recibe recomendaciones para empezar.</p>
+      </div>
+    </section>
+    <div class="container page-body diagnostico-contenido">
+      <p class="diagnostico-privacidad">No pedimos datos personales ni guardamos o enviamos tus respuestas.
+        Se usan solo en esta página y se borran al reiniciar o recargar.</p>
+      <aside class="diagnostico-aviso" aria-label="Alcance del resultado">
+        <p><strong>El resultado es orientativo y no sustituye una auditoría profesional.</strong>
+          Este índice educativo no mide la probabilidad de sufrir un ataque.</p>
+      </aside>
+      <div id="diagnostico-carga" class="state-box" role="status">
+        <p>Cargando cuestionario…</p>
+      </div>
+      <noscript><p class="state-box">Activa JavaScript para responder el cuestionario.</p></noscript>
+
+      <!-- VISTA MVC: plantilla declarativa procesada por Vue, no HTML generado manualmente. -->
+      <div id="diagnostico-app" v-cloak>
+        <div class="diagnostico-progreso">
+          <p aria-live="polite">{{ respondidas }} de {{ preguntas.length }} preguntas respondidas</p>
+          <progress :value="respondidas" :max="preguntas.length" aria-label="Preguntas respondidas"></progress>
+        </div>
+        <form @submit.prevent="calcular" novalidate aria-label="Cuestionario de ciberseguridad">
+          <pregunta-diagnostico v-for="pregunta in preguntas" :key="pregunta.id"
+            :pregunta="pregunta" :opciones="opciones"
+            v-model="respuestas[pregunta.id]" @update:model-value="limpiarResultado"
+            :incompleta="faltantes.includes(pregunta.id)">
+          </pregunta-diagnostico>
+          <p v-if="mensaje" class="form-msg error" role="alert">{{ mensaje }}</p>
+          <div class="diagnostico-acciones">
+            <button class="btn btn-primary btn-lg" type="submit">Ver mi resultado</button>
+            <button class="btn btn-outline" type="button" @click="reiniciar">Reiniciar respuestas</button>
+          </div>
+        </form>
+        <resultado-diagnostico v-if="resultado" :resultado="resultado"></resultado-diagnostico>
+      </div>
+    </div>
+  </main>
+
+  <div id="footer-placeholder"></div>
+  <script type="module" src="../assets/js/diagnostico/app.js"></script>
+</body>
+</html>

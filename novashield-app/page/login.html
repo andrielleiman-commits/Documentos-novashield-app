@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iniciar sesión — NovaShield</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <main class="auth">
+    <section class="auth-brand">
+      <h2>Gestione sus servicios de seguridad en un solo lugar</h2>
+      <p>Ingrese para enviar solicitudes y seguir su estado.</p>
+      <ul>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"/></svg>Historial de todas sus solicitudes</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"/></svg>Precios y duración visibles antes de contratar</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"/></svg>Datos protegidos con autenticación</li>
+      </ul>
+    </section>
+
+    <section class="auth-form-wrap">
+      <form class="auth-form" id="form-login" novalidate>
+        <h1>Iniciar sesión</h1>
+        <p class="muted">Use el correo con el que se registró.</p>
+        <div class="field">
+          <label for="email">Correo electrónico</label>
+          <input type="email" id="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="password">Contraseña</label>
+          <input type="password" id="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" id="btn-enviar" type="submit">Iniciar sesión</button>
+        <p class="form-msg" id="mensaje" role="alert"></p>
+        <p class="auth-alt">¿No tiene cuenta? <a href="registro.html">Crear cuenta</a></p>
+      </form>
+    </section>
+  </main>
+
+  <div id="footer-placeholder"></div>
+
+  <script type="module">
+    import { initLayout } from "../assets/js/layout.js";
+    import { iniciarSesion, obtenerRolUsuario } from "../service/auth-service.js";
+    import { mostrarMensaje, traducirError } from "../assets/js/ui-helpers.js";
+
+    initLayout();
+
+    document.getElementById("form-login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      const mensaje = document.getElementById("mensaje");
+      const boton = document.getElementById("btn-enviar");
+
+      if (!email || !password) {
+        mostrarMensaje(mensaje, "Ingrese su correo y contraseña.", "error");
+        return;
+      }
+      boton.disabled = true;
+      boton.textContent = "Ingresando…";
+      try {
+        const usuario = await iniciarSesion(email, password);
+        const rol = await obtenerRolUsuario(usuario.uid);
+        window.location.href = rol === "admin" ? "admin/admin.html" : "catalogo.html";
+      } catch (error) {
+        mostrarMensaje(mensaje, traducirError(error), "error");
+        boton.disabled = false;
+        boton.textContent = "Iniciar sesión";
+      }
+    });
+  </script>
+</body>
+</html>

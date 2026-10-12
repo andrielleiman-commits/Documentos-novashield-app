@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Servicios — NovaShield</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <main>
+    <section class="page-head">
+      <div class="container">
+        <h1>Servicios de ciberseguridad</h1>
+        <p>Compare alcance, duración y precio. Agregue lo que necesita a su solicitud.</p>
+      </div>
+    </section>
+
+    <div class="container page-body">
+      <div class="toolbar">
+        <input type="search" id="buscar" placeholder="Buscar por nombre o descripción" aria-label="Buscar servicios">
+        <select id="filtro-categoria" aria-label="Filtrar por categoría">
+          <option value="">Todas las categorías</option>
+        </select>
+        <select id="orden" aria-label="Ordenar servicios">
+          <option value="nombre">Nombre (A–Z)</option>
+          <option value="precio-asc">Precio: menor a mayor</option>
+          <option value="precio-desc">Precio: mayor a menor</option>
+          <option value="duracion">Duración: más corta</option>
+        </select>
+      </div>
+
+      <p class="result-count" id="contador" aria-live="polite"></p>
+
+      <div id="estado-carga" class="state-box">
+        <div class="spinner"></div>
+        <p>Cargando servicios…</p>
+      </div>
+      <div class="grid grid-3" id="lista-servicios" hidden></div>
+      <div class="load-more" id="zona-mas" hidden>
+        <button class="btn btn-outline" id="btn-mas" type="button">Mostrar más servicios</button>
+      </div>
+    </div>
+  </main>
+
+  <div id="footer-placeholder"></div>
+
+  <script type="module">
+    import { initLayout, actualizarContadorCarrito } from "../assets/js/layout.js";
+    import { listarServiciosActivos } from "../service/servicios-service.js";
+    import {
+      escapeHtml, formatearPrecio, CATEGORIAS, nombreCategoria, iconoCategoria, mostrarToast
+    } from "../assets/js/ui-helpers.js";
+
+    initLayout();
+
+    const POR_PAGINA = 12;
+    let todos = [];
+    let visibles = POR_PAGINA;
+
+    const $lista = document.getElementById("lista-servicios");
+    const $carga = document.getElementById("estado-carga");
+    const $contador = document.getElementById("contador");
+    const $mas = document.getElementById("zona-mas");
+    const $buscar = document.getElementById("buscar");
+    const $categoria = document.getElementById("filtro-categoria");
+    const $orden = document.getElementById("orden");
+
+    // Llenar el selector de categorías
+    Object.entries(CATEGORIAS).forEach(([clave, nombre]) => {
+      $categoria.insertAdjacentHTML("beforeend", `<option value="${clave}">${nombre}</option>`);
+    });
+
+    // Si se llega desde la portada con ?categoria=pentesting, se preselecciona
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("categoria") && CATEGORIAS[params.get("categoria")]) {
+      $categoria.value = params.get("categoria");
+    }
+
+    function filtrarYOrdenar() {
+      const texto = $buscar.value.trim().toLowerCase();
+      const categoria = $categoria.value;
+      let lista = todos.filter((s) => {
+        const coincideTexto = !texto ||
+          String(s.nombre).toLowerCase().includes(texto) ||
+          String(s.descripcion).toLowerCase().includes(texto);
+        const coincideCategoria = !categoria || s.categoria === categoria;
+        return coincideTexto && coincideCategoria;
+      });
+
+      switch ($orden.value) {
+        case "precio-asc": lista.sort((a, b) => a.precio - b.precio); break;
+        case "precio-desc": lista.sort((a, b) => b.precio - a.precio); break;
+        case "duracion": lista.sort((a, b) => a.duracionHoras - b.duracionHoras); break;
+        default: lista.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es", { numeric: true }));
+      }
+      return lista;
+    }
+
+    function pintar() {
+      const lista = filtrarYOrdenar();
+      const mostrados = lista.slice(0, visibles);
+
+      $contador.textContent = lista.length === 0
+        ? ""
+        : `Mostrando ${mostrados.length} de ${lista.length} servicios`;
+
+      if (lista.length === 0) {
+        $lista.hidden = true;
+        $mas.hidden = true;
+        $carga.hidden = false;
+        $carga.innerHTML = `<h3>No encontramos servicios con esos filtros</h3><p>Quite la búsqueda o elija otra categoría.</p>`;
+        return;
+      }
+
+      $carga.hidden = true;
+      $lista.hidden = false;
+      $lista.innerHTML = mostrados.map((s) => `
+        <article class="card service-card">
+          <div class="top">
+            <div class="icon-box">${iconoCategoria(s.categoria)}</div>
+            <span class="badge badge-info">${escapeHtml(nombreCategoria(s.categoria))}</span>
+          </div>
+          <h3>${escapeHtml(s.nombre)}</h3>
+          <p class="desc">${escapeHtml(s.descripcion)}</p>
+          <div class="service-meta">
+            <div class="price">${formatearPrecio(s.precio)}<small>${s.duracionHoras} h de trabajo</small></div>
+            <button class="btn btn-primary btn-sm" type="button" data-agregar="${escapeHtml(s.id)}">Agregar</button>
+          </div>
+        </article>
+      `).join("");
+      $mas.hidden = mostrados.length >= lista.length;
+    }
+
+    function reiniciarYPintar() { visibles = POR_PAGINA; pintar(); }
+    $buscar.addEventListener("input", reiniciarYPintar);
+    $categoria.addEventListener("change", reiniciarYPintar);
+    $orden.addEventListener("change", reiniciarYPintar);
+    document.getElementById("btn-mas").addEventListener("click", () => { visibles += POR_PAGINA; pintar(); });
+
+    // Agregar a la solicitud (carrito en el navegador: solo id, nombre, precio y cantidad)
+    $lista.addEventListener("click", (evento) => {
+      const boton = evento.target.closest("[data-agregar]");
+      if (!boton) return;
+      const servicio = todos.find((s) => s.id === boton.dataset.agregar);
+      if (!servicio) return;
+
+      const carrito = JSON.parse(localStorage.getItem("carrito") || "[]");
+      const existente = carrito.find((i) => i.id === servicio.id);
+      if (existente) {
+        existente.cantidad += 1;
+      } else {
+        carrito.push({ id: servicio.id, nombre: servicio.nombre, precio: servicio.precio, cantidad: 1 });
+      }
+      localStorage.setItem("carrito", JSON.stringify(carrito));
+      actualizarContadorCarrito();
+      mostrarToast("Agregado a tu solicitud: " + servicio.nombre);
+    });
+
+    async function cargar() {
+      try {
+        todos = await listarServiciosActivos();
+        if (todos.length === 0) {
+          $carga.innerHTML = `<h3>Aún no hay servicios publicados</h3><p>Vuelve pronto.</p>`;
+          return;
+        }
+        pintar();
+      } catch (error) {
+        console.error(error);
+        $carga.innerHTML = `<h3>No se pudo cargar el catálogo</h3><p>Revisa tu conexión e inténtalo de nuevo. Detalle: ${escapeHtml(error.message)}</p>`;
+      }
+    }
+    cargar();
+  </script>
+</body>
+</html>

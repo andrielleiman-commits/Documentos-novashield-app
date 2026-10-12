@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi solicitud — NovaShield</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <main>
+    <section class="page-head">
+      <div class="container">
+        <h1>Mi solicitud</h1>
+        <p>Revise los servicios elegidos antes de enviarla.</p>
+      </div>
+    </section>
+
+    <div class="container page-body">
+      <div id="vacio" class="state-box" hidden>
+        <h3>Tu solicitud está vacía</h3>
+        <p>Agrega servicios desde el catálogo para poder enviarla.</p>
+        <a class="btn btn-primary" href="catalogo.html">Ver servicios</a>
+      </div>
+
+      <div id="exito" class="state-box" hidden>
+        <h3>Solicitud enviada</h3>
+        <p>La registramos con estado pendiente. Puedes seguirla en tu historial.</p>
+        <a class="btn btn-primary" href="historial.html">Ver mis solicitudes</a>
+      </div>
+
+      <div class="checkout" id="contenido" hidden>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Servicio</th><th>Cantidad</th><th class="num">Precio</th><th class="num">Subtotal</th><th></th></tr>
+            </thead>
+            <tbody id="filas"></tbody>
+          </table>
+        </div>
+
+        <aside class="card">
+          <h3>Resumen</h3>
+          <div class="summary-row"><span>Servicios</span><span id="res-cantidad">0</span></div>
+          <div class="summary-total"><span>Total</span><span id="res-total">S/ 0.00</span></div>
+          <button class="btn btn-primary btn-block btn-lg" id="btn-confirmar" type="button">Enviar solicitud</button>
+          <p id="aviso-login" class="form-msg" hidden>
+            Para enviar la solicitud, <a href="login.html">inicia sesión</a> o <a href="registro.html">crea una cuenta</a>.
+          </p>
+          <p id="mensaje" class="form-msg"></p>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <div id="footer-placeholder"></div>
+
+  <script type="module">
+    import { initLayout, actualizarContadorCarrito, esperarUsuario } from "../assets/js/layout.js";
+    import { crearSolicitud } from "../service/solicitudes-service.js";
+    import { escapeHtml, formatearPrecio, mostrarMensaje, traducirError } from "../assets/js/ui-helpers.js";
+
+    initLayout();
+
+    let usuario = null;
+    const $vacio = document.getElementById("vacio");
+    const $exito = document.getElementById("exito");
+    const $contenido = document.getElementById("contenido");
+    const $filas = document.getElementById("filas");
+    const $mensaje = document.getElementById("mensaje");
+    const $btn = document.getElementById("btn-confirmar");
+
+    const leerCarrito = () => JSON.parse(localStorage.getItem("carrito") || "[]");
+    function guardarCarrito(carrito) {
+      localStorage.setItem("carrito", JSON.stringify(carrito));
+      actualizarContadorCarrito();
+    }
+
+    function pintar() {
+      const carrito = leerCarrito();
+      if (carrito.length === 0) {
+        $contenido.hidden = true;
+        $vacio.hidden = false;
+        return;
+      }
+      $vacio.hidden = true;
+      $contenido.hidden = false;
+
+      $filas.innerHTML = carrito.map((item) => `
+        <tr>
+          <td><strong>${escapeHtml(item.nombre)}</strong></td>
+          <td>
+            <div class="qty">
+              <button type="button" data-menos="${escapeHtml(item.id)}" aria-label="Quitar uno">−</button>
+              <span>${item.cantidad}</span>
+              <button type="button" data-mas="${escapeHtml(item.id)}" aria-label="Agregar uno">+</button>
+            </div>
+          </td>
+          <td class="num">${formatearPrecio(item.precio)}</td>
+          <td class="num">${formatearPrecio(item.precio * item.cantidad)}</td>
+          <td class="num"><button class="link-remove" type="button" data-quitar="${escapeHtml(item.id)}">Quitar</button></td>
+        </tr>
+      `).join("");
+
+      document.getElementById("res-cantidad").textContent = carrito.reduce((s, i) => s + i.cantidad, 0);
+      document.getElementById("res-total").textContent =
+        formatearPrecio(carrito.reduce((s, i) => s + i.precio * i.cantidad, 0));
+    }
+
+    $filas.addEventListener("click", (e) => {
+      const carrito = leerCarrito();
+      const idMas = e.target.dataset.mas, idMenos = e.target.dataset.menos, idQuitar = e.target.dataset.quitar;
+      if (idMas) carrito.find((i) => i.id === idMas).cantidad += 1;
+      if (idMenos) {
+        const item = carrito.find((i) => i.id === idMenos);
+        if (item.cantidad > 1) item.cantidad -= 1;
+      }
+      let resultado = carrito;
+      if (idQuitar) resultado = carrito.filter((i) => i.id !== idQuitar);
+      if (idMas || idMenos || idQuitar) { guardarCarrito(resultado); pintar(); }
+    });
+
+    $btn.addEventListener("click", async () => {
+      const carrito = leerCarrito();
+      if (!usuario) {
+        document.getElementById("aviso-login").hidden = false;
+        return;
+      }
+      if (carrito.length === 0) return;
+
+      $btn.disabled = true;
+      $btn.textContent = "Enviando…";
+      try {
+        await crearSolicitud(usuario.uid, carrito);
+        guardarCarrito([]);
+        $contenido.hidden = true;
+        $exito.hidden = false;
+      } catch (error) {
+        console.error(error);
+        mostrarMensaje($mensaje, traducirError(error), "error");
+        $btn.disabled = false;
+        $btn.textContent = "Enviar solicitud";
+      }
+    });
+
+    esperarUsuario().then((u) => {
+      usuario = u;
+      document.getElementById("aviso-login").hidden = !!u;
+      pintar();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<div class="topbar" id="topbar">
+  <div class="container topbar-inner">
+    <a class="brand" href="/index.html" aria-label="NovaShield, ir al inicio">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <path d="M16 2 4 7v8c0 7.2 5 12.9 12 15 7-2.1 12-7.8 12-15V7L16 2Z" fill="#1f5eff"/>
+        <path d="M11 20V12l10 8v-8" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      NovaShield
+    </a>
+
+    <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false">&#9776;</button>
+
+    <nav class="nav" id="nav" aria-label="Navegación principal">
+      <a href="/index.html" data-page="index.html">Inicio</a>
+      <a href="/page/catalogo.html" data-page="catalogo.html">Servicios</a>
+      <a href="/page/historial.html" data-page="historial.html" data-auth="usuario" hidden>Mis solicitudes</a>
+      <a href="/page/admin/admin.html" data-page="admin" data-auth="admin" hidden>Panel admin</a>
+    </nav>
+
+    <div class="nav-actions">
+      <a class="cart-link" href="/page/carrito.html">Mi solicitud <span class="cart-badge" id="cart-count">0</span></a>
+      <span class="user-name" id="user-name" hidden></span>
+      <a class="btn btn-ghost" id="btn-login" href="/page/login.html">Iniciar sesión</a>
+      <a class="btn btn-primary" id="btn-register" href="/page/registro.html">Crear cuenta</a>
+      <button class="btn btn-ghost" id="btn-logout" type="button" hidden>Cerrar sesión</button>
+    </div>
+  </div>
+</div>

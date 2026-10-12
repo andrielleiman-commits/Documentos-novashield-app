@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel admin — NovaShield</title>
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <h4>Administración</h4>
+      <a href="admin.html" class="active">Solicitudes</a>
+      <a href="admin-servicios.html">Servicios</a>
+    </aside>
+
+    <main class="admin-main">
+      <div id="bloqueo" class="state-box">
+        <div class="spinner"></div>
+        <p>Verificando permisos…</p>
+      </div>
+
+      <div id="panel" hidden>
+        <div class="admin-title">
+          <h1>Solicitudes de clientes</h1>
+          <a class="btn btn-outline" href="admin-servicios.html">Gestionar servicios</a>
+        </div>
+
+        <div class="grid grid-4" style="margin-bottom:24px">
+          <div class="stat"><div class="value" id="st-servicios">–</div><div class="label">Servicios registrados</div></div>
+          <div class="stat"><div class="value" id="st-activos">–</div><div class="label">Servicios activos</div></div>
+          <div class="stat"><div class="value" id="st-solicitudes">–</div><div class="label">Solicitudes recibidas</div></div>
+          <div class="stat"><div class="value" id="st-pendientes">–</div><div class="label">Pendientes de atender</div></div>
+        </div>
+
+        <div class="filters">
+          <select id="filtro-estado" aria-label="Filtrar por estado">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendientes</option>
+            <option value="atendida">Atendidas</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Cliente</th><th class="num">Servicios</th><th class="num">Total registrado</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody id="filas"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="footer-placeholder"></div>
+
+  <script type="module">
+    import { initLayout, esperarUsuario } from "../../assets/js/layout.js";
+    import { obtenerRolUsuario } from "../../service/auth-service.js";
+    import { listarTodosLosServicios } from "../../service/servicios-service.js";
+    import { listarTodasLasSolicitudes, actualizarEstadoSolicitud } from "../../service/solicitudes-service.js";
+    import { escapeHtml, formatearFecha, mostrarToast, traducirError } from "../../assets/js/ui-helpers.js";
+
+    initLayout().catch(console.error);
+
+    const $bloqueo = document.getElementById("bloqueo");
+    const $panel = document.getElementById("panel");
+    const $filas = document.getElementById("filas");
+    const $filtro = document.getElementById("filtro-estado");
+    let solicitudes = [];
+
+    function pintarTabla() {
+      const estado = $filtro.value;
+      const lista = solicitudes
+        .filter((s) => !estado || s.estado === estado)
+        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+      if (lista.length === 0) {
+        $filas.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:32px">No hay solicitudes para mostrar.</td></tr>`;
+        return;
+      }
+      $filas.innerHTML = lista.map((sol) => {
+        return `
+          <tr>
+            <td>${formatearFecha(sol.fecha)}</td>
+            <td><strong title="Identificador del usuario">${escapeHtml(sol.userId)}</strong></td>
+            <td class="num">${sol.items.length}</td>
+            <td class="num" title="La solicitud no guarda precios históricos">No registrado</td>
+            <td>${sol.estado === "atendida" ? '<span class="badge badge-ok">Atendida</span>' : '<span class="badge badge-warn">Pendiente</span>'}</td>
+            <td class="num">${sol.estado === "pendiente" ? `<button class="btn btn-outline btn-sm" data-atender="${escapeHtml(sol.id)}">Marcar atendida</button>` : ""}</td>
+          </tr>`;
+      }).join("");
+    }
+
+    function pintarEstadisticas(servicios) {
+      document.getElementById("st-servicios").textContent = servicios.length;
+      document.getElementById("st-activos").textContent = servicios.filter((s) => s.activo).length;
+      document.getElementById("st-solicitudes").textContent = solicitudes.length;
+      document.getElementById("st-pendientes").textContent = solicitudes.filter((s) => s.estado === "pendiente").length;
+    }
+
+    async function cargarPanel() {
+      const [servicios, sols] = await Promise.all([
+        listarTodosLosServicios(), listarTodasLasSolicitudes()
+      ]);
+      solicitudes = sols;
+      pintarEstadisticas(servicios);
+      pintarTabla();
+    }
+
+    function mostrarErrorPanel(error) {
+      console.error(error);
+      solicitudes = [];
+      $filas.innerHTML = "";
+      $panel.hidden = true;
+      $bloqueo.hidden = false;
+      $bloqueo.innerHTML = `<h3>No se pudo cargar el panel</h3><p>${escapeHtml(traducirError(error))}</p>`;
+    }
+
+    $filtro.addEventListener("change", pintarTabla);
+    $filas.addEventListener("click", async (e) => {
+      const boton = e.target.closest("[data-atender]");
+      if (!boton || boton.disabled) return;
+      const id = boton.dataset.atender;
+      if (!id) return;
+      boton.disabled = true;
+      try {
+        await actualizarEstadoSolicitud(id, "atendida");
+        const solicitud = solicitudes.find((sol) => sol.id === id);
+        if (solicitud) solicitud.estado = "atendida";
+        document.getElementById("st-pendientes").textContent =
+          solicitudes.filter((sol) => sol.estado === "pendiente").length;
+        pintarTabla();
+        mostrarToast("Solicitud marcada como atendida");
+        try {
+          await cargarPanel();
+        } catch (error) {
+          if (error.code === "permission-denied") mostrarErrorPanel(error);
+          else console.error(error);
+          mostrarToast("Solicitud actualizada, pero no se pudo recargar el panel. " + traducirError(error), "error");
+        }
+      } catch (error) {
+        if (error.code === "permission-denied") mostrarErrorPanel(error);
+        else console.error(error);
+        mostrarToast("No se pudo actualizar la solicitud. " + traducirError(error), "error");
+        boton.disabled = false;
+      }
+    });
+
+    async function iniciar() {
+      try {
+        const usuario = await esperarUsuario();
+        if (!usuario) {
+          $bloqueo.innerHTML = `<h3>Necesitas iniciar sesión</h3><p>Esta sección es solo para administradores.</p><a class="btn btn-primary" href="../login.html">Iniciar sesión</a>`;
+          return;
+        }
+        const rol = await obtenerRolUsuario(usuario.uid);
+        if (rol !== "admin") {
+          $bloqueo.innerHTML = `<h3>No tienes permisos de administrador</h3><p>Tu cuenta no puede acceder a esta sección.</p><a class="btn btn-primary" href="../catalogo.html">Volver al catálogo</a>`;
+          return;
+        }
+        await cargarPanel();
+        $bloqueo.hidden = true;
+        $panel.hidden = false;
+      } catch (error) {
+        mostrarErrorPanel(error);
+      }
+    }
+    iniciar();
+  </script>
+</body>
+</html>

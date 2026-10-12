@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mis solicitudes — NovaShield</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <main>
+    <section class="page-head">
+      <div class="container">
+        <h1>Mis solicitudes</h1>
+        <p>Historial de los servicios que has contratado y su estado.</p>
+      </div>
+    </section>
+
+    <div class="container page-body">
+      <div id="estado" class="state-box">
+        <div class="spinner"></div>
+        <p>Cargando tu historial…</p>
+      </div>
+      <div id="lista" hidden></div>
+    </div>
+  </main>
+
+  <div id="footer-placeholder"></div>
+
+  <script type="module">
+    import { initLayout, esperarUsuario } from "../assets/js/layout.js";
+    import { obtenerHistorialUsuario } from "../service/solicitudes-service.js";
+    import { db } from "../service/firebase-config.js";
+    import { doc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+    import { escapeHtml, formatearFecha, traducirError } from "../assets/js/ui-helpers.js";
+
+    initLayout().catch(console.error);
+
+    const $estado = document.getElementById("estado");
+    const $lista = document.getElementById("lista");
+
+    function badgeEstado(estado) {
+      return estado === "atendida"
+        ? '<span class="badge badge-ok">Atendida</span>'
+        : '<span class="badge badge-warn">Pendiente</span>';
+    }
+
+    async function obtenerNombreDisponible(servicioId) {
+      if (typeof servicioId !== "string" || !servicioId ||
+          servicioId.trim() !== servicioId || servicioId.includes("/") ||
+          servicioId === "." || servicioId === ".." || /^__.*__$/.test(servicioId) ||
+          new TextEncoder().encode(servicioId).length > 1500) return null;
+      try {
+        // Consulta solo la referencia de este item, nunca todos los servicios.
+        const snap = await getDoc(doc(db, "servicios", servicioId));
+        if (!snap.exists()) return null;
+        const servicio = snap.data();
+        if (servicio.activo !== true) return null;
+        const nombre = servicio.nombre;
+        return typeof nombre === "string" && nombre.trim() ? nombre : null;
+      } catch (error) {
+        // Un servicio inactivo, eliminado o sin permiso no bloquea el historial.
+        if (error.code !== "permission-denied" && error.code !== "not-found") {
+          console.error(error);
+        }
+        return null;
+      }
+    }
+
+    async function cargar() {
+      try {
+        const usuario = await esperarUsuario();
+        if (!usuario) {
+          $estado.innerHTML = `<h3>Inicia sesión para ver tu historial</h3><p>Tus solicitudes se guardan en tu cuenta.</p><a class="btn btn-primary" href="login.html">Iniciar sesión</a>`;
+          return;
+        }
+        const solicitudes = await obtenerHistorialUsuario(usuario.uid);
+
+        if (solicitudes.length === 0) {
+          $estado.innerHTML = `<h3>Aún no tienes solicitudes</h3><p>Cuando envíes una, aparecerá aquí.</p><a class="btn btn-primary" href="catalogo.html">Ver servicios</a>`;
+          return;
+        }
+
+        // Solo se usan nombres consultables del catálogo actual. Las solicitudes
+        // no guardan nombres ni precios históricos; no se reconstruyen importes.
+        const ids = [...new Set(solicitudes.flatMap((sol) =>
+          sol.items.map((item) => item.servicioId)))];
+        const nombres = new Map(await Promise.all(ids.map(async (id) =>
+          [id, await obtenerNombreDisponible(id)])));
+
+        solicitudes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+        $lista.innerHTML = solicitudes.map((sol) => {
+          const items = sol.items.map((it) => {
+            const nombre = nombres.get(it.servicioId);
+            return `<li><span title="${nombre ? "Nombre del catálogo actual" : "Nombre no disponible"}">${nombre ? escapeHtml(nombre) : "Servicio no disponible"} × ${escapeHtml(it.cantidad)}</span>
+                    <span title="Precio histórico no registrado">—</span></li>`;
+          }).join("");
+          return `
+            <article class="card request-card">
+              <div class="request-head">
+                <strong>Solicitud del ${formatearFecha(sol.fecha)}</strong>
+                ${badgeEstado(sol.estado)}
+              </div>
+              <ul class="request-items">${items}</ul>
+              <div class="request-total"><span>Total registrado</span><span title="La solicitud no guarda precios históricos">No registrado</span></div>
+            </article>`;
+        }).join("");
+
+        $estado.hidden = true;
+        $lista.hidden = false;
+      } catch (error) {
+        console.error(error);
+        $lista.hidden = true;
+        $estado.hidden = false;
+        $estado.innerHTML = `<h3>No se pudo cargar tu historial</h3><p>${escapeHtml(traducirError(error))}</p>`;
+      }
+    }
+    cargar();
+  </script>
+</body>
+</html>

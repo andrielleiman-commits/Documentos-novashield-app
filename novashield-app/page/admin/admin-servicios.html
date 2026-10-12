@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Servicios — Panel admin — NovaShield</title>
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <h4>Administración</h4>
+      <a href="admin.html">Solicitudes</a>
+      <a href="admin-servicios.html" class="active">Servicios</a>
+    </aside>
+
+    <main class="admin-main">
+      <div id="bloqueo" class="state-box">
+        <div class="spinner"></div>
+        <p>Verificando permisos…</p>
+      </div>
+
+      <div id="panel" hidden>
+        <div class="admin-title">
+          <h1>Servicios</h1>
+          <button class="btn btn-primary" id="btn-nuevo" type="button">Nuevo servicio</button>
+        </div>
+
+        <div class="filters">
+          <input type="search" id="buscar" placeholder="Buscar por nombre" aria-label="Buscar servicio">
+          <select id="filtro-categoria" aria-label="Filtrar por categoría"><option value="">Todas las categorías</option></select>
+        </div>
+        <p class="result-count" id="contador"></p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Servicio</th><th>Categoría</th><th class="num">Precio</th><th class="num">Horas</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody id="filas"></tbody>
+          </table>
+        </div>
+        <div class="load-more" id="zona-mas" hidden>
+          <button class="btn btn-outline" id="btn-mas" type="button">Mostrar más</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Ventana para crear / editar -->
+  <div class="modal-backdrop" id="modal" hidden>
+    <form class="modal" id="form-servicio" novalidate>
+      <h2 id="modal-titulo">Nuevo servicio</h2>
+      <div class="field">
+        <label for="f-nombre">Nombre del servicio</label>
+        <input type="text" id="f-nombre" required>
+      </div>
+      <div class="field">
+        <label for="f-categoria">Categoría</label>
+        <select id="f-categoria" required></select>
+      </div>
+      <div class="field">
+        <label for="f-descripcion">Descripción</label>
+        <textarea id="f-descripcion" required></textarea>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label for="f-precio">Precio (S/)</label>
+          <input type="number" id="f-precio" min="0" step="0.01" required>
+        </div>
+        <div class="field">
+          <label for="f-horas">Duración (horas)</label>
+          <input type="number" id="f-horas" min="1" step="1" required>
+        </div>
+      </div>
+      <p class="form-msg" id="modal-msg" role="alert"></p>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" id="btn-cancelar">Cancelar</button>
+        <button class="btn btn-primary" type="submit" id="btn-guardar">Guardar servicio</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="footer-placeholder"></div>
+
+  <script type="module">
+    import { initLayout, esperarUsuario } from "../../assets/js/layout.js";
+    import { obtenerRolUsuario } from "../../service/auth-service.js";
+    import {
+      crearServicio, listarTodosLosServicios, actualizarServicio, eliminarServicio
+    } from "../../service/servicios-service.js";
+    import {
+      escapeHtml, formatearPrecio, CATEGORIAS, nombreCategoria, mostrarMensaje, mostrarToast
+    } from "../../assets/js/ui-helpers.js";
+
+    initLayout();
+
+    const POR_PAGINA = 15;
+    let servicios = [];
+    let visibles = POR_PAGINA;
+    let editandoId = null;
+
+    const $bloqueo = document.getElementById("bloqueo");
+    const $panel = document.getElementById("panel");
+    const $filas = document.getElementById("filas");
+    const $buscar = document.getElementById("buscar");
+    const $filtroCat = document.getElementById("filtro-categoria");
+    const $modal = document.getElementById("modal");
+    const $form = document.getElementById("form-servicio");
+    const $msg = document.getElementById("modal-msg");
+
+    // Selectores de categoría (filtro y formulario usan la misma lista)
+    Object.entries(CATEGORIAS).forEach(([clave, nombre]) => {
+      $filtroCat.insertAdjacentHTML("beforeend", `<option value="${clave}">${nombre}</option>`);
+      document.getElementById("f-categoria").insertAdjacentHTML("beforeend", `<option value="${clave}">${nombre}</option>`);
+    });
+
+    function pintar() {
+      const texto = $buscar.value.trim().toLowerCase();
+      const cat = $filtroCat.value;
+      const lista = servicios
+        .filter((s) => (!texto || String(s.nombre).toLowerCase().includes(texto)) && (!cat || s.categoria === cat))
+        .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es", { numeric: true }));
+      const mostrados = lista.slice(0, visibles);
+
+      document.getElementById("contador").textContent = `Mostrando ${mostrados.length} de ${lista.length} servicios`;
+      document.getElementById("zona-mas").hidden = mostrados.length >= lista.length;
+
+      if (mostrados.length === 0) {
+        $filas.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:32px">No hay servicios para mostrar.</td></tr>`;
+        return;
+      }
+      $filas.innerHTML = mostrados.map((s) => `
+        <tr>
+          <td><strong>${escapeHtml(s.nombre)}</strong></td>
+          <td>${escapeHtml(nombreCategoria(s.categoria))}</td>
+          <td class="num">${formatearPrecio(s.precio)}</td>
+          <td class="num">${s.duracionHoras}</td>
+          <td>${s.activo ? '<span class="badge badge-ok">Activo</span>' : '<span class="badge badge-muted">Inactivo</span>'}</td>
+          <td>
+            <div class="table-actions">
+              <button class="btn btn-outline btn-sm" data-editar="${escapeHtml(s.id)}">Editar</button>
+              <button class="btn btn-outline btn-sm" data-estado="${escapeHtml(s.id)}">${s.activo ? "Desactivar" : "Activar"}</button>
+              <button class="btn btn-danger btn-sm" data-borrar="${escapeHtml(s.id)}">Eliminar</button>
+            </div>
+          </td>
+        </tr>`).join("");
+    }
+
+    async function recargar() {
+      servicios = await listarTodosLosServicios();
+      pintar();
+    }
+
+    // ---- Filtros ----
+    const reiniciar = () => { visibles = POR_PAGINA; pintar(); };
+    $buscar.addEventListener("input", reiniciar);
+    $filtroCat.addEventListener("change", reiniciar);
+    document.getElementById("btn-mas").addEventListener("click", () => { visibles += POR_PAGINA; pintar(); });
+
+    // ---- Modal crear / editar ----
+    function abrirModal(servicio) {
+      editandoId = servicio ? servicio.id : null;
+      document.getElementById("modal-titulo").textContent = servicio ? "Editar servicio" : "Nuevo servicio";
+      document.getElementById("f-nombre").value = servicio ? servicio.nombre : "";
+      document.getElementById("f-categoria").value = servicio ? servicio.categoria : "auditoria";
+      document.getElementById("f-descripcion").value = servicio ? servicio.descripcion : "";
+      document.getElementById("f-precio").value = servicio ? servicio.precio : "";
+      document.getElementById("f-horas").value = servicio ? servicio.duracionHoras : "";
+      $msg.textContent = "";
+      $modal.hidden = false;
+      document.getElementById("f-nombre").focus();
+    }
+    const cerrarModal = () => { $modal.hidden = true; };
+    document.getElementById("btn-nuevo").addEventListener("click", () => abrirModal(null));
+    document.getElementById("btn-cancelar").addEventListener("click", cerrarModal);
+    $modal.addEventListener("click", (e) => { if (e.target === $modal) cerrarModal(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$modal.hidden) cerrarModal(); });
+
+    $form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const datos = {
+        nombre: document.getElementById("f-nombre").value.trim(),
+        categoria: document.getElementById("f-categoria").value,
+        descripcion: document.getElementById("f-descripcion").value.trim(),
+        precio: Number(document.getElementById("f-precio").value),
+        duracionHoras: Number(document.getElementById("f-horas").value)
+      };
+      if (!datos.nombre || !datos.descripcion || !(datos.precio >= 0) || !(datos.duracionHoras >= 1)) {
+        mostrarMensaje($msg, "Complete todos los campos con valores válidos.", "error");
+        return;
+      }
+      const boton = document.getElementById("btn-guardar");
+      boton.disabled = true;
+      try {
+        if (editandoId) {
+          await actualizarServicio(editandoId, datos);
+          mostrarToast("Servicio actualizado");
+        } else {
+          await crearServicio(datos);
+          mostrarToast("Servicio creado");
+        }
+        cerrarModal();
+        await recargar();
+      } catch (error) {
+        console.error(error);
+        mostrarMensaje($msg, "No se pudo guardar: " + error.message, "error");
+      } finally {
+        boton.disabled = false;
+      }
+    });
+
+    // ---- Acciones de la tabla (editar, activar/desactivar, eliminar) ----
+    $filas.addEventListener("click", async (e) => {
+      const idEditar = e.target.dataset.editar;
+      const idEstado = e.target.dataset.estado;
+      const idBorrar = e.target.dataset.borrar;
+      try {
+        if (idEditar) {
+          abrirModal(servicios.find((s) => s.id === idEditar));
+        } else if (idEstado) {
+          const s = servicios.find((x) => x.id === idEstado);
+          await actualizarServicio(idEstado, { activo: !s.activo });
+          mostrarToast(s.activo ? "Servicio desactivado" : "Servicio activado");
+          await recargar();
+        } else if (idBorrar) {
+          const s = servicios.find((x) => x.id === idBorrar);
+          if (confirm(`¿Eliminar "${s.nombre}"? Esta acción no se puede deshacer.`)) {
+            await eliminarServicio(idBorrar);
+            mostrarToast("Servicio eliminado");
+            await recargar();
+          }
+        }
+      } catch (error) {
+        console.error(error);
+        mostrarToast("No se pudo completar la acción", "error");
+      }
+    });
+
+    async function iniciar() {
+      const usuario = await esperarUsuario();
+      if (!usuario) {
+        $bloqueo.innerHTML = `<h3>Necesitas iniciar sesión</h3><p>Esta sección es solo para administradores.</p><a class="btn btn-primary" href="../login.html">Iniciar sesión</a>`;
+        return;
+      }
+      const rol = await obtenerRolUsuario(usuario.uid);
+      if (rol !== "admin") {
+        $bloqueo.innerHTML = `<h3>No tienes permisos de administrador</h3><p>Tu cuenta no puede acceder a esta sección.</p><a class="btn btn-primary" href="../catalogo.html">Volver al catálogo</a>`;
+        return;
+      }
+      try {
+        await recargar();
+        $bloqueo.hidden = true;
+        $panel.hidden = false;
+      } catch (error) {
+        console.error(error);
+        $bloqueo.innerHTML = `<h3>No se pudo cargar los servicios</h3><p>Detalle: ${escapeHtml(error.message)}</p>`;
+      }
+    }
+    iniciar();
+  </script>
+</body>
+</html>
